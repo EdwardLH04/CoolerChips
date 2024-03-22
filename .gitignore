@@ -1,10 +1,10 @@
 EnergyPlus-9.6.0-f420c06a69-Linux-Ubuntu20.04-x86_64.sh
-EnergyPlusExample/Output/
-EnergyPlusExample/EnergyPlus
+MOSTcool/Output/
+MOSTcool/EnergyPlus
 *.log
 *.png
 *.pyc
 .idea/*
 Output*
-EnergyPlusExample/ThermalModel_datacenter/Modes.csv
-EnergyPlusExample/ThermalModel_datacenter/solution_PythonPOD_Solid.cgns
+MOSTcool/ThermalModel_datacenter/Modes.csv
+MOSTcool/ThermalModel_datacenter/solution_PythonPOD_Solid.cgns
