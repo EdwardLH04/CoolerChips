@@ -19,8 +19,7 @@ import pandas as pd
 from plan_tools.runtime import fixup_taskbar_icon_on_windows
 from pubsub import pub
 from typing import Union
-import definitions
-import simulator
+from MOSTcool import definitions, simulator
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 
 plt.rcParams.update({'font.size': 24})  # Adjust font size as needed
@@ -57,12 +56,13 @@ class MyApp(Frame):
             else:
                 print(f"Could not set icon for Windows, expecting to find it at {self.icon_path}")
         else:  # Linux
-            self.icon_path = Path(__file__).resolve().parent / 'icons' / 'icon.png'
-            img = PhotoImage(file=str(self.icon_path))
-            if self.icon_path.exists():
-                self.root.iconphoto(False, img)
-            else:
-                print(f"Could not set icon for Windows, expecting to find it at {self.icon_path}")
+            pass  # TODO: Make ICON for MOSTcool
+            # self.icon_path = Path(__file__).resolve().parent / 'icons' / 'icon.png'
+            # img = PhotoImage(file=str(self.icon_path))
+            # if self.icon_path.exists():
+            #     self.root.iconphoto(False, img)
+            # else:
+            #     print(f"Could not set icon for Windows, expecting to find it at {self.icon_path}")
         # fixup_taskbar_icon_on_windows(mostcool.NAME)
 
         # high level GUI configuration
@@ -120,8 +120,8 @@ class MyApp(Frame):
 
         # on Linux, initialize the notification class instance
         self.notification = None
-        if system() == 'Linux':
-            self.notification_icon = Path(self.icon_path)
+        # if system() == 'Linux':
+        #     self.notification_icon = Path(self.icon_path)
             # self.notification = Notification('energyplus_regression_runner')
 
 
@@ -454,15 +454,16 @@ class MyApp(Frame):
     def done_handler(self, results=None):
         if results is None:
             pass
-        self.add_to_log("All done, finished")
-        self.label_status.set("Hey, all done!")
-        if self.results is not None:
-            self.results_previous = self.results
-        self.results = results
-        self.update_option_menu(self.y_axis_drop_down_menu, results.columns[1:], results.columns[1])
-        # TODO: Present results on the GUI, do Plotting here. 
-        # plot the first col as default
-        self.client_done()
+        else:
+            self.add_to_log("All done, finished")
+            self.label_status.set("Hey, all done!")
+            if self.results is not None:
+                self.results_previous = self.results
+            self.results = results
+            self.update_option_menu(self.y_axis_drop_down_menu, results.columns[1:], results.columns[1])
+            # TODO: Present results on the GUI, do Plotting here. 
+            # plot the first col as default
+            self.client_done()
 
     @staticmethod
     def cancelled_listener():

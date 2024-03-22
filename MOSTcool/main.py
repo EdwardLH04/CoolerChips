@@ -12,7 +12,7 @@ from sys import argv
 
 
 def main_gui():
-    from gui import MyApp
+    from MOSTcool.gui import MyApp
     app = MyApp()
     app.run()
 

@@ -1,16 +1,19 @@
+import os
 from time import sleep
 from typing import Optional, Callable
 import subprocess
-import definitions
+import MOSTcool.definitions
 from pathlib import Path
 import pandas as pd
-from datetime import datetime
 
+
+# Get the directory of the current file (e.g., main.py or definitions.py)
+current_dir = os.path.dirname(__file__)
 
 # Add commands that should be run to this list
 commands = [
-    ["helics", "run", "--path=runner.json"],
-    ["python", "cost_model.py"],
+    ["helics", "run", f"--path={os.path.join(current_dir, 'runner.json')}"],
+    ["python", "./cost_model.py"],
     # Add more as needed
 ]
 
@@ -92,6 +95,10 @@ class Simulator:
             run_command(cmd)
             print("-" * 50)  # Separator between command outputs
             self.increment_callback(f"Finished with iteration {commands.index(cmd)}")
-        df = pd.read_csv("Output/eplusout.csv")
-        self.all_done_callback(fix_results(df))
+        if os.path.isfile(f"Output/eplusout.csv"):
+            df = pd.read_csv("Output/eplusout.csv")
+            self.all_done_callback(fix_results(df))
+        else:
+            self.all_done_callback(None)
+        
         

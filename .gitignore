@@ -8,3 +8,8 @@ MOSTcool/EnergyPlus
 Output*
 MOSTcool/ThermalModel_datacenter/Modes.csv
 MOSTcool/ThermalModel_datacenter/solution_PythonPOD_Solid.cgns
+MOSTcool/icons/icon.icns
+MOSTcool/icons/icon.ico
+.venv*
+build/
+MOSTcool.egg-info/

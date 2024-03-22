@@ -1,0 +1,2 @@
+recursive-include MOSTcool/Resources *
+include MOSTcool/runner.json
