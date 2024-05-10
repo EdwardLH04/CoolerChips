@@ -1,0 +1,979 @@
+import tkinter as tk
+from tkinter import filedialog
+from tkinter import ttk
+from bs4 import BeautifulSoup
+import matplotlib.pyplot as plt
+import numpy as np
+from tkinter import OptionMenu
+from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
+class FileInputGUI(tk.Frame):
+    def __init__(self, root):
+        self.root = root
+        self.settings_window = None  # Initialize settings_window attribute
+        self.settings_entries = {}  # Initialize settings_entries attribute
+        self.elements_window = None  # Initialize elements_window attribute
+        self.canvas_ROI = None  # Initialize canvas_ROI attribute
+        self.canvas_IRR = None  # Initialize canvas_IRR attribute
+        self.canvas_NPV = None  # Initialize canvas_NPV attribute
+        self.popup = None
+        self.output_box_2 = tk.Text(self.root) 
+        self.tree_2 = ttk.Treeview(self.root)
+        self.root.title("Cost Model GUI")
+        
+        self.add_file_option = tk.StringVar()
+        self.add_file_option.set("Add second HTM file")
+        
+        self.create_widgets()
+        
+        # Initialize cooling cost variables
+        self.cooling_cost1 = 0
+        self.cooling_cost2 = 0
+        
+        total_equipment_cost = 0  # Initialize total equipment cost
+        
+        # Define a custom font
+        custom_font = ("Times New Roman", 14)  # Change 12 to your desired font size
+
+        # Apply the custom font to all widgets
+        root.option_add("*Font", custom_font)
+        
+        # Check if cooling costs are valid
+        if self.cooling_cost1 < self.cooling_cost2:
+            tk.messagebox.showerror("Error", "Cooling cost in Default Case is less than Cooling cost in Case of Interst! This will not produce an IRR graph")
+            return
+
+        # Add textboxes with prefilled variables
+        self.variables = {
+            "Duration of Simulation (years)":"20",
+            "Electricity Cost ($/kWh)": "0.145",
+            "Cooling Maintenance Cost (per event)": "50000",
+            "Energy Inflation (per year)": "0.0224",
+            "Inflation (per year)": "0.035",
+            "Discount Rate (per year)": "0.06",
+            "IT Maintenance Cost (per event)": "250000",
+            "Cost of Fluid ($/thousand gallons)":"10.65",
+            "Data Center Capacity (kW)": "500",
+            "CEPCI Number":"8.008",
+            "Eventually calculate the values below": "",
+            "Recovered Heat (fraction of energy cost)": "0.1",
+            "Piping Size (diameter)":"4",
+            "Duct Size (sq ft)":"4"
+        }
+        
+        self.elements = {
+            "IT_Electrically_Active_Floor_Space" : "0",
+            "IT_Equipment_reliability" : "0",
+            "Number of Servers" : "0",
+            "IT Redundancy" : "0",
+            "IT Energy Cost Increase" : "0",
+            "Non Server IT Hardware" : "0"
+        }
+        
+        # Input labels
+        self.input_label1 = tk.Label(root, text="Parameters from E+")
+        self.input_label1.grid(row=2, column=0, columnspan=3, sticky='w')
+
+        self.input_label2 = tk.Label(root, text="Cost of Cooling System and its Components")
+        self.input_label2.grid(row=2, column=4, columnspan=3, sticky='w')
+
+        # First file input widgets
+        self.label1 = tk.Label(root, text="Add the first HTM file:")
+        self.label1.grid(row=0, column=0, sticky='w')
+
+        self.file_path1 = None
+
+        self.select_button1 = tk.Button(root, text="Reference Case HTM File", command=self.select_file1)
+        self.select_button1.grid(row=0, column=1, sticky='w')
+
+        self.output_box1 = tk.Text(root, height=10, width=50)
+        self.output_box1.grid(row=4, column=0, columnspan=3, padx=5, pady=5)
+        
+        # Second file input widgets
+        self.output_box2 = tk.Text(root, height=10, width=50)
+        self.output_box2.grid(row=6, column=0, columnspan=3, padx=5, pady=5)
+
+        # Initialize treeview frame for the first file output
+        self.tree_frame = tk.Frame(root)
+        self.tree_frame.grid(row=4, column=4, columnspan=3, padx=5, pady=5, sticky='nswe')
+
+        # Initialize treeview widget for the first file output
+        self.tree1 = ttk.Treeview(self.tree_frame, columns=("Parameter", "Value", "Redundancy", "Total Cost of Equipment"), show="headings")
+        self.tree1.heading("Parameter", text="Parameter")
+        self.tree1.heading("Value", text="Cost Per Equipment")
+        self.tree1.heading("Redundancy", text="Redundancy") 
+        self.tree1.heading("Total Cost of Equipment", text="Total Cost of Equipment")
+
+        # Initialize vertical scrollbar for the treeview
+        vertical_scrollbar = tk.Scrollbar(self.tree_frame, orient="vertical", command=self.tree1.yview)
+        vertical_scrollbar.pack(side="right", fill="y")
+
+        # Initialize horizontal scrollbar for the treeview
+        horizontal_scrollbar = tk.Scrollbar(self.tree_frame, orient="horizontal", command=self.tree1.xview)
+        horizontal_scrollbar.pack(side="bottom", fill="x")
+
+        # Configure treeview to use the scrollbars
+        self.tree1.configure(yscrollcommand=vertical_scrollbar.set, xscrollcommand=horizontal_scrollbar.set)
+
+        # Place the treeview widget in the frame
+        self.tree1.pack(side="left", fill="both", expand=True)
+      
+        # Double-click binding for treeview
+        self.tree1.bind("<Double-1>", self.on_double_click)
+
+        # Initialize treeview widget for the second file output
+        self.tree2 = ttk.Treeview(root, columns=("Parameter", "Value", "Redundancy", "Total Cost of Equipment"), show="headings")
+        self.tree2.heading("Parameter", text="Parameter")
+        self.tree2.heading("Value", text="Cost Per Equipment")
+        self.tree2.heading("Redundancy", text="Redundancy")
+        self.tree2.heading("Total Cost of Equipment", text="Total Cost of Equipment")
+        self.tree2.grid(row=6, column=4, columnspan=3, padx=5, pady=5, sticky='we')
+        
+        
+
+        # Double-click binding for treeview
+        self.tree2.bind("<Double-1>", self.on_double_click)
+        
+        # Location Label
+        self.label2 = tk.Label(root, text="Reference Case:")
+        self.label2.grid(row=3, column=0, sticky='w')
+        
+        self.label2 = tk.Label(root, text="Case of interest:")
+        self.label2.grid(row=5, column=0, sticky='w')
+
+        # Button to open the new window
+        self.open_window_button = tk.Button(root, text="Default Parameters", command=self.open_settings_window)
+        self.open_window_button.grid(row=0, column=8, sticky='e')
+        
+        #Reset
+        self.open_window_button = tk.Button(root, text="Clear", command=self.reset_window1)
+        self.open_window_button.grid(row=3, column=3, sticky='e', padx=(5, 0))
+        
+        self.open_window_button = tk.Button(root, text="Clear", command=self.reset_window2)
+        self.open_window_button.grid(row=5, column=3, sticky='e', padx=(5, 0))
+        
+        # Add new componenet
+        self.open_window_button = tk.Button(root, text="Add", command=self.add_new_component1, state="disabled")
+        self.open_window_button.grid(row=3, column=4, sticky='e', padx=(50, 0))
+        
+        self.open_window_button = tk.Button(root, text="Add", command=self.add_new_component2, state="disabled")
+        self.open_window_button.grid(row=5, column=4, sticky='e', padx=(50, 0))
+
+        # Add remove componenet
+        self.open_window_button = tk.Button(root, text="Remove", command=self.remove_component1, state="disabled")
+        self.open_window_button.grid(row=3, column=5, sticky='e', padx=(100, 0))
+        
+        self.open_window_button = tk.Button(root, text="Remove", command=self.remove_component2, state="disabled")
+        self.open_window_button.grid(row=5, column=5, sticky='e', padx=(100, 0))
+        
+        # Add or remove costing elements
+        self.open_window_button = tk.Button(root, text="Cost Elements Menu", command=self.open_elements_window)
+        self.open_window_button.grid(row=1, column=8, sticky='e')
+
+        # Button to calculate IRR
+        self.calculate_irr_button = tk.Button(root, text="Calculate IRR", command=self.calculate_irr)
+        self.calculate_irr_button.grid(row=7, column=4, sticky='w')
+
+        # Button to open the new window
+        self.open_window_button = tk.Button(root, text="Default Parameters", command=self.open_settings_window)
+        self.open_window_button.grid(row=0, column=8, sticky='e')
+
+        # Button to calculate IRR
+        self.calculate_irr_button = tk.Button(root, text="Calculate IRR", command=self.calculate_irr)
+        self.calculate_irr_button.grid(row=7, column=4, sticky='w')
+    
+    def create_widgets(self):
+        # Dropdown menu for file options
+        file_option_menu = ttk.Combobox(self.root, textvariable=self.add_file_option, values=["Add Interest Case HTM File", "Interest Case Cost per Server", "Interest Case Cost per Rack", "Interest Case Cost per KW"], width=25, font=("Times New Roman", 14))
+        file_option_menu.grid(row=1, column=0, padx=10, pady=10)
+        file_option_menu.bind("<<ComboboxSelected>>", self.on_option_selected)
+
+        # Button for adding HTM file (initially)
+        self.add_htm_button = tk.Button(self.root, text="Case of interest HTM file", command=self.add_htm_file2, font=("Times New Roman", 14))
+        self.add_htm_button.grid(row=1, column=1, padx=10, pady=10)
+        
+        # Initialize all text box attributes
+        self.cost_per_server_entry = tk.Entry(self.root)
+        self.cost_per_rack_entry = tk.Entry(self.root)
+        self.cost_per_kw_entry = tk.Entry(self.root)
+    
+    def on_option_selected(self, event):
+        selected_option = self.add_file_option.get()
+        if selected_option == "Add Interest Case HTM File":
+            # Remove button and add text box
+            self.add_htm_button.grid_remove()  # Remove button
+            self.cost_per_rack_entry.grid_remove()  # Remove text box if it exists
+            self.cost_per_kw_entry.grid_remove()  # Remove text box if it exists
+            self.cost_per_server_entry = tk.Entry(self.root)
+            self.cost_per_server_entry.grid(row=1, column=1, padx=10, pady=10)
+        elif selected_option == "Interest Case Cost per Server":
+            # Remove button and add text box
+            self.add_htm_button.grid_remove()  # Remove button
+            self.cost_per_server_entry.grid_remove()  # Remove text box if it exists
+            self.cost_per_kw_entry.grid_remove()  # Remove text box if it exists
+            self.cost_per_rack_entry = tk.Entry(self.root)
+            self.clear_output_box_2()
+            self.clear_tree_2()
+            self.cost_per_rack_entry.grid(row=1, column=1, padx=10, pady=10)
+        elif selected_option == "Interest Case Cost per Rack":
+            # Remove button and add text box
+            self.add_htm_button.grid_remove()  # Remove button
+            self.cost_per_server_entry.grid_remove()  # Remove text box if it exists
+            self.cost_per_kw_entry.grid_remove()  # Remove text box if it exists
+            self.cost_per_rack_entry = tk.Entry(self.root)
+            self.clear_output_box_2()
+            self.clear_tree_2()
+            self.cost_per_rack_entry.grid(row=1, column=1, padx=10, pady=10)
+        elif selected_option == "Interest Case Cost per KW":
+            # Remove button and add text box
+            self.add_htm_button.grid_remove()  # Remove button
+            self.cost_per_server_entry.grid_remove()  # Remove text box if it exists
+            self.cost_per_rack_entry.grid_remove()  # Remove text box if it exists
+            self.cost_per_kw_entry = tk.Entry(self.root)
+            self.clear_output_box_2()
+            self.clear_tree_2()
+            self.cost_per_kw_entry.grid(row=1, column=1, padx=10, pady=10)
+        else:
+            # Restore button and remove text boxes
+            if hasattr(self, 'cost_per_server_entry'):
+                self.cost_per_server_entry.grid_remove()  # Remove text box if it exists
+            if hasattr(self, 'cost_per_rack_entry'):
+                self.cost_per_rack_entry.grid_remove()  # Remove text box if it exists
+            if hasattr(self, 'cost_per_kw_entry'):
+                self.cost_per_kw_entry.grid_remove()  # Remove text box if it exists
+            self.add_htm_button.grid()  # Restore button
+
+    
+    def create_scrollable_frame(self):
+        # Create a scrollbar
+        scrollbar = tk.Scrollbar(self.root, orient=tk.VERTICAL)
+        scrollbar.grid(row=0, column=1, sticky="ns")
+
+        # Create a canvas to put the scrollable content on
+        canvas = tk.Canvas(self.root, yscrollcommand=scrollbar.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+
+        # Attach the scrollbar to the canvas
+        scrollbar.config(command=canvas.yview)
+
+        # Create a frame inside the canvas to put your widgets on
+        self.scrollable_frame = tk.Frame(canvas)
+        canvas.create_window((0, 0), window=self.scrollable_frame, anchor='nw')
+
+        # Add widgets to the frame
+        for i in range(50):
+            tk.Label(self.scrollable_frame, text=f"Label {i}").grid(row=i, column=0, sticky="w")
+
+        # Configure the canvas to update scroll region
+        self.scrollable_frame.bind('<Configure>', self.on_configure)
+    
+    def clear_output_box_2(self):
+        self.output_box_2.delete(1.0, "end")
+
+    def clear_tree_2(self):
+        for item in self.tree_2.get_children():
+            self.tree_2.delete(item)
+    
+    def add_htm_file2(self):
+        file_path = filedialog.askopenfilename(filetypes=[("Case of interest HTM file", "*.htm")])
+        if file_path:
+            self.file_path2 = file_path
+            self.label2.config(text="Second file selected successfully.", font=("Times New Roman", 14))
+            cooling_cost2 = self.process_file(file_path, self.output_box2, self.tree2)
+            # Store cooling cost for second file
+            self.cooling_cost2 = cooling_cost2
+    
+    def select_file1(self):
+        file_path = filedialog.askopenfilename(filetypes=[("HTM files", "*.htm")])
+        if file_path:
+            self.file_path1 = file_path
+            self.label1.config(text="First file selected successfully.")
+            cooling_cost1 = self.process_file(file_path, self.output_box1, self.tree1)
+            # Store cooling cost for first file
+            self.cooling_cost1 = cooling_cost1       
+
+    def process_file(self, file_path, output_box1, treeview):
+        with open(file_path, 'r') as file:
+            html_content = file.read()
+
+        # Parse the HTML content
+        soup = BeautifulSoup(html_content, 'html.parser')
+
+        # Find the chiller table
+        chiller_table = soup.find('b', text='Chiller:Electric:EIR').find_next('table')
+        if chiller_table:
+            capacity_value = self.extract_value_from_table(chiller_table, 'Design Size Reference Capacity [W]')
+            output_box1.insert(tk.END, "Design Size Reference Capacity [W]: " + capacity_value + "\n")
+            
+            chiller_cost = self.chiller_calculator(capacity_value)
+            
+            formatted_chiller_cost = "${:,.2f}".format(chiller_cost)
+            redundancy = "N"  # Default redundancy value
+            total_chiller_cost = chiller_cost * self.get_redundancy_multiplier(redundancy)
+            treeview.insert("", "end", values=("Chiller", str(formatted_chiller_cost), redundancy, str(formatted_chiller_cost)))
+
+        else:
+            output_box1.insert(tk.END, "Chiller table not found in the HTML content.\n")
+
+        # Find the airloopHVAC table
+        airloopHVAC_table = soup.find('b', text='AirLoopHVAC').find_next('table')
+        if airloopHVAC_table:
+            flow_rate_value = self.extract_value_from_table(airloopHVAC_table, 'Adjusted Cooling Design Air Flow Rate [m3/s]')
+            output_box1.insert(tk.END, "Adjusted Cooling Design Air Flow Rate [m3/s]: " + flow_rate_value + "\n")            
+        else:
+            output_box1.insert(tk.END, "AirLoopHVAC table not found in the HTML content.\n")
+
+        # Find the CoolingTower:VariableSpeed table
+        cooling_tower_table = soup.find('b', text='CoolingTower:VariableSpeed').find_next('table')
+        if cooling_tower_table:
+            capacity_value = self.extract_value_from_table(cooling_tower_table, 'Nominal Capacity [W]')
+            output_box1.insert(tk.END, "Nominal Capacity [W]: " + capacity_value + "\n")
+            
+            cooling_tower_cost = self.cooling_tower_calculator(capacity_value)
+                
+            formatted_cooling_tower_cost = "${:,.2f}".format(cooling_tower_cost)
+            redundancy = "N"  # Default redundancy value
+            total_cooling_tower_cost = cooling_tower_cost * self.get_redundancy_multiplier(redundancy)
+            treeview.insert("", "end", values=("Cooling Tower", str(formatted_cooling_tower_cost), redundancy, str(formatted_cooling_tower_cost)))
+        else:
+            output_box1.insert(tk.END, "CoolingTower:VariableSpeed table not found in the HTML content.\n")
+
+        # Find the Pump cost
+        pump_table = soup.find('b', text='Pump:VariableSpeed').find_next('table')
+        if pump_table:
+            flow_rate_value = self.extract_value_from_table(pump_table, 'Design Flow Rate [m3/s]')
+            output_box1.insert(tk.END, "Design Flow Rate [m3/s]: " + flow_rate_value + "\n")
+            power_consumption_value = self.extract_value_from_table(pump_table, 'Design Power Consumption [W]')
+            output_box1.insert(tk.END, "Design Power Consumption [W]: " + power_consumption_value + "\n")
+            
+            pump_cost = self.pump_calculator(power_consumption_value)
+            redundancy = "N"  # Default redundancy value    
+            formatted_pump_cost = "${:,.2f}".format(pump_cost)
+            treeview.insert("", "end", values=("Pumps",str(formatted_pump_cost),redundancy, str(formatted_pump_cost)))
+        else:
+            output_box1.insert(tk.END, "Pump:VariableSpeed table not found in the HTML content.\n")
+
+        # Find the PlantLoop table
+        plantloop_table = soup.find('b', text='PlantLoop').find_next('table')
+        if plantloop_table:
+            volume_value = self.extract_value_from_table(plantloop_table, 'Plant Loop Volume [m3]')
+            output_box1.insert(tk.END, "Plant Loop Volume [m3]: " + volume_value + "\n")
+            
+            #Determine the cost of fluid
+            fluid_cost = self.fluid_calculator(volume_value)
+            redundancy = "N"  # Default redundancy value 
+            formatted_fluid_cost = "${:,.2f}".format(fluid_cost)
+            treeview.insert("", "end", values=("Fluid", str(formatted_fluid_cost),redundancy,str(formatted_fluid_cost)))
+        else:
+            output_box1.insert(tk.END, "PlantLoop table not found in the HTML content.\n")
+        
+        cost_factor = 8.008
+        #plumbing and piping cost
+        #Duct
+        duct_cost = self.duct_calculator(volume_value)
+        redundancy = "N"  # Default redundancy value 
+        formatted_duct_cost = "${:,.2f}".format(duct_cost)
+        treeview.insert("", "end", values=("Ducting", str(formatted_duct_cost),redundancy, str(formatted_duct_cost)))
+        
+        #Piping cost
+        piping_cost = self.pipe_calculator(volume_value)
+        redundancy = "N"  # Default redundancy value
+        formatted_piping_cost = "${:,.2f}".format(piping_cost)
+        treeview.insert("", "end", values=("Piping", str(formatted_piping_cost), redundancy, str(formatted_piping_cost)))
+        
+        #CRAH
+        crah_cost = self.CRAH_calculator()
+        redundancy = "N"  # Default redundancy value
+        formatted_crah_cost = "${:,.2f}".format(crah_cost)
+        treeview.insert("", "end", values=("Computer Room Air Handler", str(formatted_crah_cost), redundancy, str(formatted_crah_cost)))
+        
+        #Air Economizer
+        air_economizer_cost = self.air_economizer_calculator()
+        redundancy = "N"  # Default redundancy value
+        formatted_air_economizer_cost = "${:,.2f}".format(air_economizer_cost)
+        treeview.insert("", "end", values=("Air Economizer", str(formatted_air_economizer_cost), redundancy, str(formatted_air_economizer_cost) ))
+        
+        cooling_cost = chiller_cost + cooling_tower_cost + pump_cost + fluid_cost + duct_cost + piping_cost + crah_cost + air_economizer_cost
+        formatted_cooling_cost = "${:,.2f}".format(cooling_cost)
+        # Define a tag for bold text
+        treeview.tag_configure("bold", font=("TkDefaultFont", 10, "bold"))
+        
+        # Insert the values with the "bold" tag applied to the text
+        treeview.insert("", "end", values=("Total cost of cooling system", "", "", str(formatted_cooling_cost)), tags=("bold",))
+
+        return cooling_cost
+
+    def chiller_calculator(self, capacity_value):
+        # Remove dollar sign and comma from the string
+        capacity_value = capacity_value.replace('$', '').replace(',', '')
+        
+        # Determine the chiller cost here. As well as size
+        chiller_BTU_hr = float(capacity_value) / 3.412
+        chiller_Tons_hr = chiller_BTU_hr / 12000
+        chiller_Tons = chiller_Tons_hr * 1.2
+
+        if chiller_Tons < 50:
+            chiller_cost = chiller_Tons * 1500
+        elif chiller_Tons < 150:
+            chiller_cost = chiller_Tons * 700
+        else:
+            chiller_cost = chiller_Tons * 450
+
+        return chiller_cost
+
+    def cooling_tower_calculator(self, capacity_value):
+        # Remove dollar sign and comma from the string
+        capacity_value = capacity_value.replace('$', '').replace(',', '')
+        
+        #Determine the cooling tower cost here. As well as size
+        cooling_tower_BTU_hr = float(capacity_value)/3.412
+        cooling_tower_Tons_hr = cooling_tower_BTU_hr/12000
+        cooling_tower_Tons = cooling_tower_Tons_hr * 1.2
+
+        if cooling_tower_Tons <10:
+            cooling_tower_cost = cooling_tower_Tons  * 1500
+        elif cooling_tower_Tons < 50:
+            cooling_tower_cost = cooling_tower_Tons  * 1250
+        else:
+            cooling_tower_cost = cooling_tower_Tons  * 750
+                                 
+        return cooling_tower_cost
+    
+    def pump_calculator(self, power_consumption_value):
+        #Determine the pump cost here. As well as size
+        cost_factor = 8.008 #This needs to made as an input. inflation value based on CECEI number
+        pump_cost = (float(power_consumption_value) * cost_factor)/100
+        
+        return pump_cost
+    
+    def duct_calculator(self, volume_value):
+        cost_factor = 8.008
+        estimate_duct_size = 4 #sq ft
+        duct_cost = (700/estimate_duct_size)*float(volume_value)*cost_factor
+        
+        return duct_cost
+    
+    def pipe_calculator(self, volume_value):
+        cost_factor = 8.008
+        estimate_pipe_size = 4 #in
+        estiamte_pipe_size = .15
+        piping_cost = (80/estimate_pipe_size)*float(volume_value)*cost_factor
+        
+        return piping_cost
+    
+    def CRAH_calculator(self):
+        #input kW need to find alternative ideally
+        data_center_capacity = 500 #kw
+        crah_cost = data_center_capacity * 240
+        
+        return crah_cost
+    
+    def air_economizer_calculator(self):
+        data_center_capacity = 500
+        air_economizer_cost = data_center_capacity * 919.4
+        
+        return air_economizer_cost
+    
+    def fluid_calculator(self, volume_value):
+        total_volume_gallons = float(volume_value) * 264.172
+        fluid_cost = (total_volume_gallons * (1.1*12))/10000*10.65 #Need variable for cost of fluid.
+        
+        return fluid_cost
+
+    def update_system_cooling_cost(self):
+        total_equipment_cost = 0
+
+        # Iterate over each item in the treeview except the last one
+        for item in self.tree1.get_children()[:-1]:
+            values = self.tree1.item(item, 'values')
+            if values:
+                cost = values[3]
+                try:
+                    cost = float(cost.replace(',', '').replace('$', ''))
+                    total_equipment_cost += cost
+                except ValueError:
+                    pass
+
+        # Update the last item (cooling cost) with the calculated total equipment cost
+        last_item = self.tree1.get_children()[-1]
+        self.tree1.item(last_item, values=("Total cost of cooling system", "", "", "${:,.2f}".format(total_equipment_cost)))
+
+        return total_equipment_cost
+    
+    def extract_value_from_table(self, table, header_text):
+        # Find all table rows
+        rows = table.find_all('tr')
+        header_row = rows[0]
+        data_row = rows[1]
+
+        # Find all cells in the header row
+        header_cells = header_row.find_all('td')
+        # Find the index of the header cell containing the specified header text
+        header_index = None
+        for i, cell in enumerate(header_cells):
+            if cell.text.strip() == header_text:
+                header_index = i
+                break
+
+        if header_index is not None:
+            # Find the corresponding cell in the data row
+            data_cells = data_row.find_all('td')
+            data_cell = data_cells[header_index]
+            value = data_cell.text.strip()
+            return value
+        else:
+            return "No '" + header_text + "' found in the table."
+        
+    # Define reset_window1 method
+    def reset_window1(self):
+        # Clearing the content of self.output_box1
+        self.output_box1.delete(1.0, tk.END)
+        
+        # Clearing contents inside self.tree1
+        for item in self.tree1.get_children():
+            self.tree1.delete(item)
+
+    # Define reset_window2 method
+    def reset_window2(self):
+        # Clearing the content of self.output_box2
+        self.output_box2.delete(1.0, tk.END)
+        
+        # Clearing contents inside self.tree2
+        for item in self.tree2.get_children():
+            self.tree2.delete(item)
+       
+    def add_new_component1(self):
+        # Insert a new component in treeview 1
+        self.tree1.insert("", "end", values=("New Component", "Value", "Redundancy", "Total Cost"))
+        
+        
+    def add_new_component2(self):
+        # Insert a new component in treeview 2
+        self.tree2.insert("", "end", values=("New Component", "Value", "Redundancy", "Total Cost"))
+        
+    def remove_component1(self):
+        # Remove the selected component from treeview 1
+        selected_item = self.tree1.selection()
+        if selected_item:
+            self.tree1.delete(selected_item)
+
+    def remove_component2(self):
+        # Remove the selected component from treeview 2
+        selected_item = self.tree2.selection()
+        if selected_item:
+            self.tree2.delete(selected_item)
+        
+    def open_settings_window(self):
+        if self.settings_window is None or not self.settings_window.winfo_exists():
+            # Create a new window if no settings window exists or if the existing one has been destroyed
+            self.settings_window = tk.Toplevel(self.root)
+            self.settings_window.title("Settings")
+
+            # Clear the existing settings_entries dictionary
+            self.settings_entries = {}
+
+            for i, (var, val) in enumerate(self.variables.items(), start=1):
+                label = ttk.Label(self.settings_window, text=var)
+                label.grid(row=i, column=0, padx=5, pady=5)
+                entry = ttk.Entry(self.settings_window)
+                entry.insert(0, val)
+                entry.grid(row=i, column=1, padx=5, pady=5)
+                # Store a reference to the entry widget in the dictionary
+                self.settings_entries[var] = entry
+
+            # Bind closing of the settings window to update variables
+            self.settings_window.protocol("WM_DELETE_WINDOW", self.on_settings_window_close)
+        else:
+            # If a settings window is already open, bring it to the front
+            self.settings_window.lift()
+            
+    def open_elements_window(self):
+        if self.elements_window is None or not self.elements_window.winfo_exists():
+            # Create a new window if no settings window exists or if the existing one has been destroyed
+            self.elements_window = tk.Toplevel(self.root)
+            self.elements_window.title("Cost Elements")
+
+            # Create Checkbuttons for each element in self.elements
+            for key, value in self.elements.items():
+                # Variable to hold the state of the Checkbutton
+                self.elements[key] = tk.BooleanVar()
+                # Set initial value based on the value in self.elements
+                self.elements[key].set(bool(int(value)))
+
+                checkbox = tk.Checkbutton(self.elements_window, text=key.replace("_", " "), variable=self.elements[key], state="disabled")
+                checkbox.pack(anchor=tk.W)
+
+            # Bind closing of the settings window to update variables
+            self.elements_window.protocol("WM_DELETE_WINDOW", self.on_elements_window_close)
+        else:
+            # If a settings window is already open, bring it to the front
+            self.elements_window.lift()
+        
+    def on_settings_window_close(self):
+        print("Closing settings window")  # Debugging message
+        # Update variables from the settings window if it was opened
+        if hasattr(self, 'settings_entries'):
+            self.update_variables_from_settings()
+        # Destroy the settings window
+        self.settings_window.destroy()
+    
+    def on_elements_window_close(self):
+        print("Closing elements window")  # Debugging message
+        # Update the elements dictionary with the current state of each Checkbutton
+        for key, var in self.elements.items():
+            self.elements[key] = "1" if var.get() else "0"
+        # Destroy the elements window
+        self.elements_window.destroy()
+
+
+    def update_variables_from_settings(self):
+        for var, entry in self.settings_entries.items():
+            # Check if the entry widget exists
+            if entry.winfo_exists():
+                # Retrieve the value from the entry widget
+                self.variables[var] = entry.get()
+            
+    def update_variable(self, event, var, entry):
+        # Update the corresponding variable in self.variables
+        self.variables[var] = entry.get()
+        # Trigger the <<Modified>> event
+        entry.event_generate("<<Modified>>")
+
+    def on_double_click(self, event):
+        # Get the item that was double-clicked
+        item = self.tree1.selection()[0]
+
+        # Get the values of the selected row
+        values = self.tree1.item(item, 'values')
+
+        # Get the parameter name, the current value, and the redundancy value
+        parameter = values[0]
+        cost = values[1]
+        redundancy = values[2]
+
+        # Define the options for the dropdown menu
+        redundancy_options = ["N", "N+1", "2N", "2N+1"]
+
+        # Create a popup window with entry widgets to edit the parameter value and the cost
+        if self.popup is None or not self.popup.winfo_exists():
+            self.popup = tk.Toplevel(self.root)
+            self.popup.title("Edit Parameter and Cost")
+
+            # Label and entry widget for the redundancy value
+            label_redundancy = tk.Label(self.popup, text=f"New redundancy value for {parameter}:")
+            label_redundancy.pack()
+            self.redundancy_var = tk.StringVar(value=redundancy)  # Store the selected redundancy value
+            dropdown = tk.OptionMenu(self.popup, self.redundancy_var, *redundancy_options)
+            dropdown.pack()
+
+            # Label and entry widget for the cost
+            label_cost = tk.Label(self.popup, text=f"New cost for {parameter}:")
+            label_cost.pack()
+            self.entry_var_cost = tk.StringVar(value=cost)  # Store the current cost value
+            entry_cost = tk.Entry(self.popup, textvariable=self.entry_var_cost)
+            entry_cost.pack()
+            
+            # Button to save the new values
+            save_button = tk.Button(self.popup, text="Save", command=lambda: self.save_new_values(item, parameter, self.redundancy_var.get(), self.entry_var_cost.get(), "${:,.2f}".format(float(self.entry_var_cost.get().replace(',', '').replace('$', '')) * self.get_redundancy_multiplier(self.redundancy_var.get()))))
+            save_button.pack()
+        else:
+            # If popup already exists, bring it to the front
+            self.popup.lift()
+
+    def edit_parameter(self, parameter):
+        # Create a popup window with an entry widget to edit the parameter value
+        popup = tk.Toplevel()
+        popup.title("Edit Parameter Value")
+
+        # Label and entry widget
+        label = tk.Label(popup, text=f"New value for {parameter}:")
+        label.pack()
+
+        entry = tk.Entry(popup)
+        entry.pack()
+
+        # Button to save the new value
+        save_button = tk.Button(popup, text="Save", command=lambda: self.save_new_value(parameter, entry.get(), popup))
+        save_button.pack()
+
+    def save_new_values(self, item, parameter, new_redundancy, new_part_cost, new_total_cost):
+        # Update the values in the treeview
+        self.tree1.set(item, column='Redundancy', value=new_redundancy)
+        self.tree1.set(item, column='Value', value=new_part_cost)
+        self.tree1.set(item, column='Total Cost of Equipment', value=new_total_cost)
+        
+        # Update the total cost of the cooling system
+        cooling_cost = self.update_system_cooling_cost()
+
+        # Close the popup window
+        if self.popup is not None and self.popup.winfo_exists():
+            self.popup.destroy()
+            
+    def get_redundancy_multiplier(self, redundancy):
+        if redundancy == "N":
+            return 1
+        elif redundancy == "2N":
+            return 2
+        elif redundancy == "N+1":
+            return 2  
+        elif redundancy == "2N+1":
+            return 3
+        else:
+            return 1  # Default to 1 if redundancy is not recognized
+
+        
+    def calculate_irr(self):
+        # Update variables from the settings window
+        self.update_variables_from_settings()
+        
+        #Inputs that will need to later be read as an input somehow
+        SimulationDuration = 20 #in years/how long simulation runs for
+        TimeStepMultiplier = 1 #12 for every month/4 for every quarter/1 for every year
+        
+        #Default Inputs
+        ElectricityCost = float(self.variables["Electricity Cost ($/kWh)"])
+        CoolingMaintenanceCost = float(self.variables["Cooling Maintenance Cost (per event)"])
+        EnergyInflation = float(self.variables["Energy Inflation (per year)"])
+        Inflation = float(self.variables["Inflation (per year)"])
+        DiscountRate = float(self.variables["Discount Rate (per year)"])
+        ITMaintenanceCost = float(self.variables["IT Maintenance Cost (per event)"])
+        RecoveredHeatValue = float(self.variables["Recovered Heat (fraction of energy cost)"])
+        
+        #Calculations to adjust time step
+        SimulationDuration = SimulationDuration*TimeStepMultiplier
+        
+        #Inputs for Baseline
+        B_CapitolCost = float(self.cooling_cost2)/1000000 #million dollars testing purposes making this value larger
+        B_Life = 9
+        B_MTBF = 2000
+        B_EnergyUsage = 250 #million kWh
+        B_AvoidedITFailures = 0
+        B_AnnualRecoveredHeat = 1200 #million kWh Needs to calculated from E+ data
+
+        #Inputs for New
+        N_CapitolCost = float(self.cooling_cost1)/1000000 #million dollars
+        N_Life = 12
+        N_MTBF = 2000
+        N_EnergyUsage = 262.8 #million kWh
+        N_AvoidedITFailures = .5
+        N_AnnualRecoveredHeat = 1314 #million kWh Needs to calculated from E+ data
+        
+        #B_CapitolCost = 3.0 #comment these out and delete once a better input file is found
+        #N_CapitolCost = 3.4
+        Inflation = .125
+
+        #Individual Expenses and Revenue Calculations for baseline
+        B_Time = []
+        B_Capitol = []
+        B_EnergyCost = []
+        B_CoolingMaintenance = []
+        B_ITMaintenance = []
+        B_HeatRevenue = []
+        B_Net = []
+        B_NPV = []
+        B_CumNPV = []
+
+        i = 0;
+        while i <= SimulationDuration:
+            B_Time.append(i)
+
+            #Capitol Costs
+            if i%B_Life == 0:
+                B_Capitol.append(B_CapitolCost*(1+Inflation)**i)
+            else:
+                B_Capitol.append(0)
+
+            #Energy Costs
+            if i > 0:
+                B_EnergyCost.append(ElectricityCost*B_EnergyUsage*(1+EnergyInflation)**(i-1))
+            else:
+                B_EnergyCost.append(0)
+
+            #Cooling Maintenance
+            if i>0:
+                B_CoolingMaintenance.append(((B_MTBF/8760)*CoolingMaintenanceCost*(1+Inflation)**i)/1000000)
+            else:
+                B_CoolingMaintenance.append(0)
+
+            #IT Maintenance
+            if i>0:
+                B_ITMaintenance.append((-B_AvoidedITFailures*ITMaintenanceCost*(1+Inflation)**i)/1000000)
+            else:
+                B_ITMaintenance.append(0)
+
+            #Heat Revenue
+            if i>0:
+                B_HeatRevenue.append(-B_AnnualRecoveredHeat*RecoveredHeatValue*ElectricityCost*(1+EnergyInflation)**(i-1))
+            else:
+                B_HeatRevenue.append(0)
+
+            #Net
+            B_Net.append(B_Capitol[i]+B_EnergyCost[i]+B_CoolingMaintenance[i]+B_ITMaintenance[i]+B_HeatRevenue[i])
+
+            #NPV
+            B_NPV.append(B_Capitol[i]/(1+DiscountRate)**i+B_EnergyCost[i]/(1+DiscountRate)**i+B_CoolingMaintenance[i]/(1+DiscountRate)**i+B_ITMaintenance[i]/(1+DiscountRate)**i+B_HeatRevenue[i]/(1+DiscountRate)**i)
+
+            #Cum NPV
+            B_CumNPV = np.cumsum(B_NPV)
+
+            #IO (PV)
+            IO = B_CapitolCost
+
+            i = i + 1
+
+        #Individual Expenses and Revenue Calculations for New
+        N_Time = []
+        N_Capitol = []
+        N_EnergyCost = []
+        N_CoolingMaintenance = []
+        N_ITMaintenance = []
+        N_HeatRevenue = []
+        N_Net = []
+        N_NPV = []
+        N_CumNPV = []
+
+        i = 0;
+        while i <= SimulationDuration:
+            N_Time.append(i)
+
+            #Capitol Costs
+            if i%N_Life == 0:
+                N_Capitol.append(N_CapitolCost*(1+Inflation)**i)
+            else:
+                N_Capitol.append(0)
+
+            #Energy Costs
+            if i > 0:
+                N_EnergyCost.append(ElectricityCost*N_EnergyUsage*(1+EnergyInflation)**(i-1))
+            else:
+                N_EnergyCost.append(0)
+
+            #Cooling Maintenance
+            if i>0:
+                N_CoolingMaintenance.append(((N_MTBF/8760)*CoolingMaintenanceCost*(1+Inflation)**i)/1000000)
+            else:
+                N_CoolingMaintenance.append(0)
+
+            #IT Maintenance
+            if i>0:
+                N_ITMaintenance.append((-N_AvoidedITFailures*ITMaintenanceCost*(1+Inflation)**i)/1000000)
+            else:
+                N_ITMaintenance.append(0)
+
+            #Heat Revenue
+            if i>0:
+                N_HeatRevenue.append(-N_AnnualRecoveredHeat*RecoveredHeatValue*ElectricityCost*(1+EnergyInflation)**(i-1))
+            else:
+                N_HeatRevenue.append(0)
+
+            #Net
+            N_Net.append(N_Capitol[i]+N_EnergyCost[i]+N_CoolingMaintenance[i]+N_ITMaintenance[i]+N_HeatRevenue[i])
+
+            #NPV
+            N_NPV.append(N_Capitol[i]/(1+DiscountRate)**i+N_EnergyCost[i]/(1+DiscountRate)**i+N_CoolingMaintenance[i]/(1+DiscountRate)**i+N_ITMaintenance[i]/(1+DiscountRate)**i+N_HeatRevenue[i]/(1+DiscountRate)**i)
+
+            #Cum NPV
+            N_CumNPV = np.cumsum(N_NPV)
+
+            #Inew (PV)
+            Inew = N_CapitolCost
+
+            i = i + 1
+
+        #Time step adjustment for inflation and discount rates
+
+
+        #ROI and IRR Calculations
+        i = 0
+        ROI = []
+        IRR = []
+        Net_NPV = []
+        
+        while i<=SimulationDuration:
+            #ROI Calc
+            if Inew-IO>0:
+                ROI.append((B_CumNPV[i]-N_CumNPV[i])/(Inew-IO))
+            else:
+                ROI.append(0)
+            #IRR Calc
+            if i>0:
+                IRR.append((1+ROI[i])**(1/i)-1)
+            else:
+                IRR.append(0)
+                
+            Net_NPV.append(B_NPV[i]-N_NPV[i])
+            i=i+1      
+      
+        # If canvases already exist, delete them
+        if self.canvas_ROI:
+            self.canvas_ROI.get_tk_widget().destroy()
+        if self.canvas_IRR:
+            self.canvas_IRR.get_tk_widget().destroy()
+        if self.canvas_NPV:
+            self.canvas_NPV.get_tk_widget().destroy()
+
+        # Create Matplotlib figures and axes for both ROI and IRR plots
+        fig_ROI, ax_ROI = plt.subplots(figsize=(7, 5))  # Set a fixed figsize for ROI plot
+        fig_IRR, ax_IRR = plt.subplots(figsize=(7, 5))  # Set a fixed figsize for IRR plot
+        fig_NPV, ax_NPV = plt.subplots(figsize=(7, 5))  # Set a fixed figsize for NPV plot
+
+        # Plot ROI
+        ax_ROI.scatter(N_Time, ROI)
+        ax_ROI.grid()
+        ax_ROI.set_xlabel('Year')
+        ax_ROI.set_ylabel('ROI')
+        ax_ROI.set_title('ROI')
+
+        # Plot IRR
+        ax_IRR.scatter(N_Time, IRR)
+        ax_IRR.plot([0, 20], [.1, .1], 'r-')
+        ax_IRR.grid()
+        ax_IRR.set_xlabel('Year')
+        ax_IRR.set_ylabel('IRR')
+        ax_IRR.set_title('IRR')
+        
+        # Plot NPV
+        ax_NPV.scatter(N_Time, Net_NPV, label='NPV Difference')
+        #ax_NPV.scatter(N_Time, N_NPV, label='New NPV')
+        #ax_NPV.scatter(N_Time, B_NPV, label='Baseline NPV')
+        ax_NPV.grid()
+        ax_NPV.set_xlabel('Year')
+        ax_NPV.set_ylabel('NPV Difference ($ in Millions)')
+        ax_NPV.set_title('NPV Difference')
+        ax_NPV.legend(loc="upper left")
+
+        # Convert the Matplotlib figures to Tkinter-compatible canvases
+        self.canvas_ROI = FigureCanvasTkAgg(fig_ROI, master=self.root)
+        self.canvas_IRR = FigureCanvasTkAgg(fig_IRR, master=self.root)
+        self.canvas_NPV = FigureCanvasTkAgg(fig_NPV, master=self.root)
+
+        # Place the canvases on the GUI
+        self.canvas_ROI.get_tk_widget().grid(row=8, column=0, columnspan=6, padx=5, pady=5, sticky='we')
+        self.canvas_IRR.get_tk_widget().grid(row=8, column=6, columnspan=6, padx=5, pady=5, sticky='we')
+        self.canvas_NPV.get_tk_widget().grid(row=8, column=12, columnspan=6, padx=5, pady=5, sticky='we')
+        
+        print("IRR:", IRR)
+        print("ROI:", ROI)
+        print("B_cumNPV:", B_CumNPV)
+        print("N_cumNPV:", N_CumNPV)
+        print("Net_NPV:", Net_NPV)
+        
+        #Finding the breakeven year
+        BreakevenYear = None
+        for i in range(1, SimulationDuration):
+            if IRR[i] > 0:
+                BreakevenYear = i
+                break
+
+        if BreakevenYear is not None:
+            print('The first breakeven year is at', BreakevenYear)
+        else:
+            print('No breakeven year found within the simulation duration.')
+            
+    def on_configure(event):
+        canvas.configure(scrollregion=canvas.bbox('all'))
+            
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = FileInputGUI(root)
+    root.mainloop()
